@@ -1,27 +1,19 @@
 import heapq
-from collections import defaultdict, namedtuple
-
-import heapq
-from collections import defaultdict, namedtuple
+import json
+from collections import defaultdict
 
 class Node:
-    def __init__(self, char, freq):
-        self.char = char
+    def __init__(self, char=None, freq=0, left=None, right=None):
+        self.char = char  # None for internal nodes, actual char for leaf nodes
         self.freq = freq
-        self.left = None
-        self.right = None
-    
-    def __lt__(self, other):
-        return self.freq < other.freq
-
-class InternalNode:
-    def __init__(self, left, right):
         self.left = left
         self.right = right
-        self.freq = left.freq + right.freq
     
     def __lt__(self, other):
         return self.freq < other.freq
+    
+    def is_leaf(self):
+        return self.char is not None
 
 def build_frequency_dict(data):
     frequency = defaultdict(int)
@@ -36,7 +28,7 @@ def build_huffman_tree(frequency):
     while len(heap) > 1:
         left = heapq.heappop(heap)
         right = heapq.heappop(heap)
-        internal_node = InternalNode(left, right)
+        internal_node = Node(freq=left.freq + right.freq, left=left, right=right)
         heapq.heappush(heap, internal_node)
     
     return heap[0]
@@ -45,7 +37,7 @@ def build_codes(tree, code='', mapping=None):
     if mapping is None:
         mapping = {}
     
-    if isinstance(tree, Node):
+    if tree.is_leaf():
         mapping[tree.char] = code
     else:
         build_codes(tree.left, code + '0', mapping)
@@ -54,8 +46,15 @@ def build_codes(tree, code='', mapping=None):
 
 def compress_file(input_path, output_path):
     # Read input file
-    with open(input_path, 'rb') as file:
-        data = file.read()
+    try:
+        with open(input_path, 'rb') as file:
+            data = file.read()
+    except FileNotFoundError:
+        print(f"Error: Input file '{input_path}' not found.")
+        return
+    except Exception as e:
+        print(f"Error reading input file: {e}")
+        return
     
     # Build Huffman tree and codes
     frequency = build_frequency_dict(data)
@@ -78,48 +77,58 @@ def compress_file(input_path, output_path):
     # Write compressed data
     with open(output_path, 'wb') as file:
         # Write frequency dictionary
-        freq_str = str(dict(frequency))
+        freq_str = json.dumps(dict(frequency))
         file.write(len(freq_str).to_bytes(4, 'big'))
         file.write(freq_str.encode())
         file.write(padding.to_bytes(1, 'big'))
         file.write(bytes(compressed))
 
 def decompress_file(input_path, output_path):
-    with open(input_path, 'rb') as file:
-        # Read frequency dictionary
-        freq_size = int.from_bytes(file.read(4), 'big')
-        freq_str = file.read(freq_size).decode()
-        frequency = eval(freq_str)
+    try:
+        with open(input_path, 'rb') as file:
+            # Read frequency dictionary
+            freq_size = int.from_bytes(file.read(4), 'big')
+            freq_str = file.read(freq_size).decode()
+            frequency = json.loads(freq_str)
+            # Convert string keys back to integers (bytes)
+            frequency = {int(k): v for k, v in frequency.items()}
+            
+            # Read padding
+            padding = int.from_bytes(file.read(1), 'big')
+            
+            # Read compressed data
+            data = file.read()
+            
+        # Rebuild Huffman tree
+        tree = build_huffman_tree(frequency)
         
-        # Read padding
-        padding = int.from_bytes(file.read(1), 'big')
+        # Convert bytes to bits
+        bits = ''.join(format(byte, '08b') for byte in data)
+        bits = bits[:-padding] if padding else bits
         
-        # Read compressed data
-        data = file.read()
+        # Decode data
+        decoded = bytearray()
+        current = tree
+        for bit in bits:
+            current = current.left if bit == '0' else current.right
+            if current.is_leaf():
+                decoded.append(current.char)
+                current = tree
         
-    # Rebuild Huffman tree
-    tree = build_huffman_tree(frequency)
-    
-    # Convert bytes to bits
-    bits = ''.join(format(byte, '08b') for byte in data)
-    bits = bits[:-padding] if padding else bits
-    
-    # Decode data
-    decoded = bytearray()
-    current = tree
-    for bit in bits:
-        current = current.left if bit == '0' else current.right
-        if isinstance(current, Node):
-            decoded.append(current.char)
-            current = tree
-    
-    # Write decompressed data
-    with open(output_path, 'wb') as file:
-        file.write(decoded)
+        # Write decompressed data
+        with open(output_path, 'wb') as file:
+            file.write(decoded)
+            
+    except FileNotFoundError:
+        print(f"Error: Input file '{input_path}' not found.")
+        return
+    except Exception as e:
+        print(f"Error during decompression: {e}")
+        return
 
 if __name__ == '__main__':
     # Example usage
-    input_file = "example.txt"
+    input_file = "test.txt"
     compressed_file = "compressed.bin"
     decompressed_file = "decompressed.txt"
 
