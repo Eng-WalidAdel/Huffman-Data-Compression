@@ -23,8 +23,6 @@ class InternalNode:
     def __lt__(self, other):
         return self.freq < other.freq
 
-# ...existing code...
-
 def build_frequency_dict(data):
     frequency = defaultdict(int)
     for symbol in data:
