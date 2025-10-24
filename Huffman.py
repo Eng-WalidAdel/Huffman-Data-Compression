@@ -1,4 +1,3 @@
-# Standard Huffman algorithm for compression and decompression
 import heapq
 from collections import defaultdict, namedtuple
 
